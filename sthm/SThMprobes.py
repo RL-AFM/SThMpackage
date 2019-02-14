@@ -51,7 +51,7 @@ def xcubed(x,s,a):
 
 class probe(object):
 
-    def __init__(self,resistance,name,ssize,cutout):
+    def __init__(self,resistance=1,name='Blank',ssize=1,cutout='N'):
         self.resistance=resistance
         self.name=name
         self.type=ssize
@@ -105,10 +105,11 @@ class probe(object):
             Vout[n]=raw_input('Enter output (mV) for input of {0}V'.format(v))
 
         self.data=np.column_stack((Vin.transpose(),Vout.transpose()))
+        np.save(datetime.datetime.now().strftime("[%Y-%m-%d %H%M]") + self.fullname,self.data)
         self.scale_input()
         print 'Writing probe data:'
         #self.display_data()
-        np.save(datetime.datetime.now().strftime("[%Y-%m-%d %H%M]") + self.fullname,self.data)
+
 
 
     #nicely display V-V sweep data in a table
@@ -265,6 +266,9 @@ class probe(object):
                 output[n]=v.tolist()
                 print 'should have converted'
         path=os.path.abspath('../data/'+self.fullname+'.sthm')
+        if os.path.exists(path):
+            response = raw_input('File already exists! Overwrite [y]?\n')
+            if response != 'y': return 'Exited without saving'
         with open(path,'w') as file:
             json.dump(self.__dict__, file)
 
