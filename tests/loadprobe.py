@@ -17,8 +17,8 @@ c3.display_data()
 #do the curve fitting. Should be redundant as this the fit is now done upon data entry
 c3.fit_self_heat_curve('current')
 c3.fit_self_heat_curve()
-c3.plot_fit('current')
-c3.plot_fit()
+c3.plot_fit('current',save='y')
+c3.plot_fit(save='y')
 
 """save the file again. it will have the same name, since we have not changed the
 name, type or cutout attributes that make up its name. saveJSON will ask for
