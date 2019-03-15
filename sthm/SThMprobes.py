@@ -46,22 +46,21 @@ import num2tex #simple script for getting latex formatted eng-style numbers
 #----------------------------------------------------------------------------------------------------------------
 
 #function that describes the form of a probe during self heating
-def xcubed(x,s,a):
-    return (s*x) + (a*x**3)
+def xcubed(x,s,a,b):
+    return (s*x) + (a*x**3) + b
 
 class probe(object):
 
-    def __init__(self,resistance=1,name='Blank',ssize=1,cutout='N'):
+    def __init__(self,resistance=300,name='UN-INITIALISED',style='k',gain=101.):
         self.resistance=resistance
         self.name=name
-        self.type=ssize
-        self.cutout=cutout
-        self.fullname= self.cutout + str(self.type) + self.name
+        self.style=style
+        self.fullname= self.style + self.name
         self.data=None
         self.maxI=self.choose_I_from_type()
         self.calculate_bridge_resistors()
         self.Vfit=None
-        self.gain=101.
+        self.gain=gain
         self.Isweep=None
         self.Vsweep=None
 
@@ -70,10 +69,19 @@ class probe(object):
     #Look up table contains the maxcurrent based on current density, divided by two for safety while testing
     def choose_I_from_type(self):
 
-        if not any(n == self.type for n in range(1,5)): raise ValueError('type can only be between 1 and 4')
-        currentlims=np.array([0.23,0.465,0.695,0.925])*1e-3
-        #print 'Maximum Current = {0:.2f}mA'.format(currentlims[n-2]*1e3)
-        return currentlims[self.type-1]
+        #make sure the style is somewhat reasonable
+        if not any(n in self.style for n in ['1','2','3','4','k']): raise ValueError('Invalid probe type')
+
+        #if it's a regular probe, set the max current as 2mA
+        if 'k' in self.style:
+            return 2e-3
+        else:
+            sensor_width=int(self.style[1])
+            if not any(n == sensor_width for n in range(1,5)): raise ValueError('type can only be between 1 and 4')
+
+            currentlims=np.array([0.23,0.465,0.695,0.925])*1e-3
+            #print 'Maximum Current = {0:.2f}mA'.format(currentlims[n-2]*1e3)
+            return currentlims[sensor_width-1]
 
     #load a saved .npy file containing the bridge V-V sweep info
     def load_curve(self, filename):
@@ -94,8 +102,6 @@ class probe(object):
         self.data[:,1]=self.data[:,1]/self.gain      #divide through by gain to get to the real signal
 
 
-
-
     #directly enter probe bridge sweep results. Increment is the voltge increment on the x axis
     def input_bridge_test(self,increment):
         Vin=np.arange(0,5+increment,increment)
@@ -108,6 +114,10 @@ class probe(object):
         np.save(datetime.datetime.now().strftime("[%Y-%m-%d %H%M]") + self.fullname,self.data)
         self.scale_input()
         print 'Writing probe data:'
+        self.display_data()
+        print 'Fitting voltage and current curves'
+        self.fit_self_heat_curve('voltage')
+        self.fit_self_heat_curve('current')
         #self.display_data()
 
 
@@ -120,7 +130,7 @@ class probe(object):
         else:
             try:
                 datacopy=np.copy(self.data)
-                datacopy[:,1]=datacopy[:,1]*1e3 * 101    #make readable; convert to mV and include the circuit's gain
+                datacopy[:,1]=datacopy[:,1]*1e3 * self.gain    #make readable; convert to mV and include the circuit's gain
                 display(HTML(tabulate.tabulate(datacopy,tablefmt="html",floatfmt=".3f",headers=('Bias(V)','Output (mV)'))))
             except AttributeError:
                 print 'No data to display'
@@ -135,9 +145,12 @@ class probe(object):
 
         #matching resistor
 
-        if r1>300:
+        if r1>200:
+            print 'Calculating bridge resistors using 5% tolerance'
             Rm=standard_resistors.floorCorrection(r1,Tol5)
+
         else:
+            print 'Calculating bridge resistors using 0.5% tolerance'
             Rm=standard_resistors.floorCorrection(r1,Tol0p5)
         #Rm=standard_resistors.floorCorrection(r1,[Tol5 if r1>300 else Tol0p5])
         print 'Probe resistance = {0}'.format(r1)
@@ -194,10 +207,12 @@ class probe(object):
         elif sweeptype=='current':self.Ifit=fit
 
 
-    def scatterdata(self):
-        plt.scatter(self.data[:,0],self.data[:,1])
+    def scatterdata(self,xscale=1,yscale=1):
+        plt.scatter(self.data[:,0]*xscale,self.data[:,1]*yscale)
 
-    def plot_fit(self,kw='voltage',save=None):
+    def plot_fit(self,kw='voltage',save=None,yprefix=''):
+
+        y_multiplier={'k':1e-3,'':1,'m': 1e3, 'u':1e6 , 'n':1e9}
 
         if kw=='voltage':
             coeffs=self.Vfit
@@ -207,21 +222,27 @@ class probe(object):
             maxbias=self.Isweep[-1]
         else: raise ValueError('voltage and current are the only valid strings')
         xax=np.linspace(0,maxbias,50)
+
         plt.cla()
-        plt.plot(xax, xcubed(xax,*coeffs),label='$V_{{out}} = {0:.2f}x + {1:.2e}x^3$'.format(coeffs[0],num2tex.num2tex(coeffs[1])))
-        plt.plot(xax, xax*coeffs[0],label='Bridge Imbalance')
-        plt.plot(xax, xax**3*coeffs[1],label='Only self-heating')
+        condition = xax*1e3 if kw=='current' else xax
+        plt.plot(condition, y_multiplier[yprefix]*xcubed(xax,*coeffs),label='$V_{{out}} = {0:.2f}x + {1:.2e}x^3 + {2:.2e}$'.format(coeffs[0],num2tex.num2tex(coeffs[1]),num2tex.num2tex(coeffs[2])))
+        plt.plot(condition, y_multiplier[yprefix]*xax*coeffs[0],label='Bridge Imbalance')
+        plt.plot(condition, y_multiplier[yprefix]*xax**3*coeffs[1],label='Only self-heating')
         if kw == 'voltage':
             plt.xlabel('Input Voltage (V)')
-            self.scatterdata()
+            self.scatterdata(yscale=y_multiplier[yprefix])
 
-        if kw == 'current': plt.xlabel('Input current (rough) (A)')
-        plt.ylabel('Output Voltage (V)')
+        if kw == 'current':
+            plt.xlabel('Input current (mA)')
+            plt.scatter(self.Isweep*1e3, y_multiplier[yprefix]*self.data[:,1])
+
+
+        plt.ylabel('Output Voltage (before gain)({0}V)'.format(yprefix))
 
         plt.legend(loc='best')
 
         if save is not None:
-            plt.savefig(datetime.datetime.now().strftime("[%Y-%m-%d %H%M]") + self.cutout + str(self.type) + self.name + kw + 'sweep')
+            plt.savefig(datetime.datetime.now().strftime("[%Y-%m-%d %H%M]") + self.fullname + kw + 'sweep')
         plt.show()
 
     #return the resistance of the probe at each measurement point, given that the bridge resistors are all known
@@ -265,7 +286,7 @@ class probe(object):
                 print n,'is a numpy array'
                 output[n]=v.tolist()
                 print 'should have converted'
-        path=os.path.abspath('../data/'+self.fullname+'.sthm')
+        path=os.path.abspath('./'+self.fullname+'.sthm')
         if os.path.exists(path):
             response = raw_input('File already exists! Overwrite [y]?\n')
             if response != 'y': return 'Exited without saving'
