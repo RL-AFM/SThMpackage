@@ -45,24 +45,32 @@ import num2tex #simple script for getting latex formatted eng-style numbers
 #<codecell>
 #----------------------------------------------------------------------------------------------------------------
 
+def make2tex(num):
+    return ' {0:.2e}'.format(num2tex.num2tex(num))
+
+
 #function that describes the form of a probe during self heating
 def xcubed(x,s,a,b):
     return (s*x) + (a*x**3) + b
 
 class probe(object):
 
-    def __init__(self,resistance=300,name='UN-INITIALISED',style='k',gain=101.):
-        self.resistance=resistance
-        self.name=name
-        self.style=style
-        self.fullname= self.style + self.name
-        self.data=None
-        self.maxI=self.choose_I_from_type()
-        self.calculate_bridge_resistors()
-        self.Vfit=None
-        self.gain=gain
-        self.Isweep=None
-        self.Vsweep=None
+    def __init__(self,resistance=300,name='UN-INITIALISED',style='k',gain=101.,loadfile=None):
+        if loadfile is not None:
+            self.loadJSON(loadfile)
+        else:
+            self.resistance=resistance
+            self.name=name
+            self.style=style
+            self.fullname= self.style + self.name
+            self.data=None
+            self.maxI=self.choose_I_from_type()
+            self.calculate_bridge_resistors()
+            self.Vfit=None
+            self.gain=gain
+            self.Isweep=None
+            self.Vsweep=None
+
 
 
     #selects the max current based upon the sensor size (1,2,3 or 4).
@@ -211,7 +219,7 @@ class probe(object):
         plt.scatter(self.data[:,0]*xscale,self.data[:,1]*yscale)
 
     def plot_fit(self,kw='voltage',save=None,yprefix=''):
-
+        plt.cla()
         y_multiplier={'k':1e-3,'':1,'m': 1e3, 'u':1e6 , 'n':1e9}
 
         if kw=='voltage':
@@ -223,9 +231,10 @@ class probe(object):
         else: raise ValueError('voltage and current are the only valid strings')
         xax=np.linspace(0,maxbias,50)
 
+        print 'Coefficients are:', coeffs
         plt.cla()
         condition = xax*1e3 if kw=='current' else xax
-        plt.plot(condition, y_multiplier[yprefix]*xcubed(xax,*coeffs),label='$V_{{out}} = {0:.2f}x + {1:.2e}x^3 + {2:.2e}$'.format(coeffs[0],num2tex.num2tex(coeffs[1]),num2tex.num2tex(coeffs[2])))
+        plt.plot(condition, y_multiplier[yprefix]*xcubed(xax,*coeffs),label='$$V_{{out}} =' + make2tex(coeffs[0]) + 'x + ' + make2tex(coeffs[1]) + 'x^3 + ' + make2tex(coeffs[2])+'$$')
         plt.plot(condition, y_multiplier[yprefix]*xax*coeffs[0],label='Bridge Imbalance')
         plt.plot(condition, y_multiplier[yprefix]*xax**3*coeffs[1],label='Only self-heating')
         if kw == 'voltage':
@@ -299,9 +308,9 @@ class probe(object):
             foo=json.load(f)
         for n,v in foo.iteritems():
             if type(v)==list:
-                print n,'is a list'
                 foo[n]=np.asarray(v)
-                print 'should have converted back'
+
         self.__dict__ = foo
+        print 'successfully loaded file: ' + fname
 
 print 'Imported SThM probe library'
